@@ -236,7 +236,11 @@ $("pickfile").onchange = run(async (e) => { await doUpload(e.target.files[0]); e
 $("takephoto").onchange = run(async (e) => { await doUpload(e.target.files[0]); e.target.value = ""; });
 $("forget").onclick = run(async () => { if (confirm("S'esborraran la clau i les dades d'aquest dispositiu. Continuar?")) { await kvDel("meta"); await kvDel("state"); session = null; render(); } });
 
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});   // sense SW l'app funciona igual (només perd el mode offline del codi)
+if ("serviceWorker" in navigator) {
+  const had = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (had && !session) location.reload(); });   // versió nova: es recarrega sola si està bloquejada
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}   // sense SW l'app funciona igual (només perd el mode offline del codi)
 (async () => {
   await render();
   if (new URLSearchParams(location.search).get("shared")) {
