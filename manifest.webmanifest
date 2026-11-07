@@ -1,0 +1,15 @@
+{
+  "name": "Visor",
+  "short_name": "Visor",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1f3a5f",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }],
+  "share_target": {
+    "action": "./share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": { "files": [{ "name": "pkg", "accept": [".efam", "application/octet-stream"] }] }
+  }
+}
