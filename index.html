@@ -6,11 +6,17 @@
 <meta name="theme-color" content="#1f3a5f">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Visor">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Visor</title>
 <style>
   :root { --bg:#fff; --fg:#1c1f24; --mut:#6b7280; --line:#e5e7eb; --acc:#1f3a5f; --ok:#0a7a3d; --err:#b42318; --card:#f5f7fa; }
   @media (prefers-color-scheme: dark) { :root { --bg:#0f1115; --fg:#e8eaee; --mut:#9aa3b2; --line:#262b34; --acc:#8fb4ff; --ok:#4ade80; --err:#ff8a80; --card:#171a21; } }
   * { box-sizing: border-box; }
+  [hidden] { display:none !important; }
   body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,-apple-system,sans-serif; padding:env(safe-area-inset-top) 16px env(safe-area-inset-bottom); }
   main { max-width:640px; margin:0 auto; padding:12px 0 40px; }
   h1 { font-size:20px; margin:8px 0 12px; } h2 { font-size:20px; margin:8px 0; } h3 { font-size:15px; margin:16px 0 6px; color:var(--mut); }
@@ -25,11 +31,19 @@
   .kv, .line { display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px solid var(--line); } .k { color:var(--mut); } .a { font-variant-numeric:tabular-nums; }
   .muted { color:var(--mut); font-size:14px; } video { width:100%; border-radius:10px; }
   #total { color:var(--mut); font-size:14px; margin:6px 0; }
+  nav { display:flex; gap:6px; margin:4px 0 10px; } nav button { flex:1; background:transparent; color:var(--acc); border:1px solid var(--line); padding:9px 4px; } nav button.on { background:var(--acc); color:var(--bg); }
+  .big { font-size:32px; font-weight:700; margin:10px 0 2px; font-variant-numeric:tabular-nums; }
+  li.g { position:relative; grid-template-columns:1fr auto 44px; gap:0 8px; padding:12px 4px 16px; } li.g .p { color:var(--mut); font-size:13px; text-align:right; align-self:center; }
+  li.g .bar { position:absolute; left:4px; bottom:6px; height:4px; border-radius:2px; background:var(--acc); opacity:.55; }
+  .sub { display:flex; justify-content:space-between; margin-top:18px; padding:6px 0; font-weight:600; border-bottom:2px solid var(--line); }
+  .tag { display:inline-block; margin-left:6px; padding:1px 7px; border-radius:99px; background:var(--card); color:var(--mut); font-size:12px; } .tag.no { color:var(--err); }
+  .ver { text-align:center; font-size:12px; margin-top:28px; }
 </style>
 </head>
 <body>
 <main>
   <h1>Visor</h1>
+  <nav id="nav" hidden><button data-tab="summary">Resum</button><button data-tab="list">Detall</button><button data-tab="upload">Envia</button></nav>
   <div id="msg" role="status"></div>
 
   <section id="setup" hidden>
@@ -42,6 +56,19 @@
   <section id="locked" hidden>
     <p>Bloquejat. Cal la biometria per accedir a la clau.</p>
     <div class="row"><button id="unlock">Desbloqueja</button><button id="forget" class="ghost">Oblida aquest dispositiu</button></div>
+  </section>
+
+  <section id="summary" hidden>
+    <select id="smonth" aria-label="Mes"></select>
+    <div id="stotal" class="big"></div>
+    <div id="spend" class="muted"></div>
+    <ul id="groups"></ul>
+  </section>
+
+  <section id="group" hidden>
+    <button id="gback" class="ghost">← Tornar</button>
+    <h2 id="gtitle"></h2><div id="gsum" class="muted"></div>
+    <div id="gbody"></div>
   </section>
 
   <section id="list" hidden>
@@ -68,6 +95,7 @@
     </div>
     <div id="uploadres"></div>
   </section>
+  <p id="ver" class="muted ver"></p>
 </main>
 <script type="module" src="app.js"></script>
 </body>

@@ -1,4 +1,5 @@
 // Lògica pura de l'app: sobres AES-256-GCM (format efam1). Sense DOM: es pot provar amb Node.
+export const VERSION = "1.1.0";
 const enc = new TextEncoder(), dec = new TextDecoder();
 export const b64 = (buf) => { let s = ""; new Uint8Array(buf).forEach((c) => (s += String.fromCharCode(c))); return btoa(s); };
 export const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));

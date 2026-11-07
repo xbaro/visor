@@ -1,6 +1,7 @@
 // Service worker: tot offline (només codi, mai dades) i rep el paquet compartit (Web Share Target).
-const CACHE = "efam-v1", FILES = ["./", "index.html", "app.js", "efam.js", "manifest.webmanifest", "icon.svg"];
+const CACHE = "efam-v1.1.0", FILES = ["./", "index.html", "app.js", "efam.js", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"];
 self.addEventListener("install", (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES))));
+self.addEventListener("activate", (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE && k !== "efam-inbox").map((k) => caches.delete(k))))));
 self.addEventListener("fetch", (e) => {
   const u = new URL(e.request.url);
   if (e.request.method === "POST" && u.pathname.endsWith("/share")) {
