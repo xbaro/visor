@@ -278,33 +278,59 @@ function renderSummary() {
 const MON3 = ['gen','feb','mar','abr','mai','jun','jul','ago','set','oct','nov','des'];
 const monthLabel = (m) => new Date(`${m}-01T00:00:00`).toLocaleDateString("ca-ES", { month: "long", year: "numeric" });
 
-// Grup: subgrups amb subtotal i les partides; cada compra amb tiquet obre la compra sencera classificada.
-function renderGroup(cat) {
+// Grup: es baixa per nivells de categoria amb subtotals; en arribar a les partides es veu cada concepte (despesa o línia de tiquet amb el seu comerç).
+const NOSUB = "(sense subcategoria)";
+const subPath = (s) => (s && s !== NOSUB ? s.split(" / ") : []);
+function groupEntries(cat) {
+  const out = [];
+  allItems().filter((r) => !r.pending && r.date.startsWith(sumMonth)).forEach((r) => r.parts.forEach((p) => { if (p.category === cat) out.push({ r, p, path: subPath(p.subcategory) }); }));
+  return out;
+}
+function conceptRows(e) {                                  // partida d'una despesa -> files: les línies del tiquet d'aquest tros, o la mateixa despesa
+  const { r, p } = e, v = Number(p.amount);
+  if (!r.lines.length) return [{ r, v, title: r.merchant || r.description, sub: r.merchant && r.merchant !== r.description ? r.description : "", ticket: false }];
+  const key = (c, sb) => `${c}\u0000${sb || NOSUB}`;
+  const lineKey = (l) => { if (l.classified && l.category) { const [h, ...rest] = l.category.split(" / "); return key(h, rest.join(" / ")); } return key(r.category, r.subcategory); };
+  const mine = r.lines.filter((l) => lineKey(l) === key(p.category, p.subcategory));
+  const rows = mine.map((l) => ({ r, v: Number(l.amount), title: `${l.quantity && l.quantity !== "1" ? l.quantity + " × " : ""}${l.description}`, sub: `🧾 Compra a ${r.merchant || r.description}`, ticket: true }));
+  const diff = v - rows.reduce((s, x) => s + x.v, 0);
+  if (Math.abs(diff) > 0.005) rows.push({ r, v: diff, title: "Descomptes i ajustos", sub: `🧾 Compra a ${r.merchant || r.description}`, ticket: true, muted: true });
+  return rows;
+}
+function renderGroup(cat, path = []) {
   show("group");
-  $("gtitle").textContent = catName(cat);
-  const subs = new Map();
-  allItems().filter((r) => !r.pending && r.date.startsWith(sumMonth)).forEach((r) => r.parts.forEach((p) => {
-    if (p.category !== cat) return;
-    const k = p.subcategory || "(sense subcategoria)";
-    if (!subs.has(k)) subs.set(k, []);
-    subs.get(k).push({ r, v: Number(p.amount) });
-  }));
+  const entries = groupEntries(cat).filter((e) => path.every((x, i) => e.path[i] === x));
+  $("gtitle").textContent = [catName(cat), ...path].join(" › ");
+  const total = entries.reduce((s, e) => s + Number(e.p.amount), 0);
+  $("gsum").textContent = `${monthLabel(sumMonth)} · ${eur(total)}`;
   const body = $("gbody"); body.replaceChildren();
-  $("gsum").textContent = `${monthLabel(sumMonth)} · ${eur([...subs.values()].flat().reduce((s, x) => s + x.v, 0))}`;
-  [...subs.entries()].sort((a, b) => b[1].reduce((s, x) => s + x.v, 0) - a[1].reduce((s, x) => s + x.v, 0)).forEach(([k, rows]) => {
-    const h = el("div", "sub"); h.append(el("span", "", k), el("span", "a", eur(rows.reduce((s, x) => s + x.v, 0))));
-    const ul = el("ul"); body.append(h, ul);
-    rows.sort((a, b) => b.r.date.localeCompare(a.r.date)).forEach(({ r, v }) => {
-      const li = el("li"); li.tabIndex = 0;
-      li.append(el("span", "d", r.date.slice(5).split("-").reverse().join("/")), el("span", "n", r.merchant || r.description), el("span", "a", eur(v)));
-      const extra = [];
-      if (r.lines.length) extra.push("🧾 compra amb tiquet");
-      if (Math.abs(Number(r.amount) - v) > 0.005) extra.push(`part de ${eur(r.amount)}`);
-      if (extra.length) li.append(el("span", "c", extra.join(" · ")));
-      li.onclick = () => { stack.push(() => renderGroup(cat)); renderDetail(r); };
+  const kids = new Map();
+  entries.filter((e) => e.path.length > path.length).forEach((e) => kids.set(e.path[path.length], (kids.get(e.path[path.length]) || 0) + Number(e.p.amount)));
+  if (kids.size) {
+    const ul = el("ul"), top = Math.max(...kids.values(), 1);
+    [...kids.entries()].sort((a, b) => b[1] - a[1]).forEach(([k, v]) => {
+      const li = el("li", "g"); li.tabIndex = 0;
+      const bar = el("span", "bar"); bar.style.width = `${Math.max(2, (Math.max(v, 0) / top) * 100)}%`;
+      li.append(el("span", "n", k), el("span", "a", eur(v)), el("span", "p", total > 0 ? `${((v / total) * 100).toFixed(0)} %` : ""), bar);
+      li.onclick = () => { stack.push(() => renderGroup(cat, path)); renderGroup(cat, [...path, k]); };
       ul.append(li);
     });
-  });
+    body.append(ul);
+  }
+  const own = entries.filter((e) => e.path.length === path.length).flatMap(conceptRows).sort((a, b) => b.r.date.localeCompare(a.r.date));
+  if (own.length) {
+    if (kids.size) body.append(el("h3", "", "Partides d'aquest nivell"));
+    const ul = el("ul");
+    own.forEach(({ r, v, title, sub, muted }) => {
+      const li = el("li"); li.tabIndex = 0;
+      li.append(el("span", "d", r.date.slice(5).split("-").reverse().join("/")), el("span", "n" + (muted ? " muted" : ""), title), el("span", "a", eur(v)));
+      if (sub) li.append(el("span", "c", sub));
+      li.onclick = () => { stack.push(() => renderGroup(cat, path)); renderDetail(r); };
+      ul.append(li);
+    });
+    body.append(ul);
+  }
+  if (!kids.size && !own.length) body.append(el("p", "muted", "Sense partides."));
 }
 
 // Detall pla (opció): totes les despeses amb cerca i filtres.
