@@ -59,14 +59,101 @@ function lock() { session = null; clearTimeout(lockTimer); render(); }
 document.addEventListener("visibilitychange", () => { if (document.hidden) lock(); });
 document.addEventListener("pointerdown", () => session && arm());
 
+
+// ---------- canvis fets a l'app (ADR-0017): es veuen al moment i s'envien a l'ordinador com una pujada xifrada ----------
+const flat = (t) => { const out = []; const walk = (v, p) => { if (Array.isArray(v)) v.forEach((x) => out.push(`${p} / ${x}`)); else Object.entries(v || {}).forEach(([k, c]) => { out.push(`${p} / ${k}`); walk(c, `${p} / ${k}`); }); }; Object.entries(t || {}).forEach(([k, v]) => { out.push(k); walk(v, k); }); return out; };
+const newId = () => "c-" + [...rand(8)].map((b) => b.toString(16).padStart(2, "0")).join("");
+async function addChange(c) {
+  if (!session.state) throw new Error("Carrega primer un paquet de dades");
+  (session.state.changes ||= []).push({ id: newId(), ...c }); await saveState(); renderChg();
+}
+function withChanges(r, ch) {
+  let o = r;
+  for (const c of ch) {
+    if (c.tx_id !== r.id) continue;
+    if (c.op === "recat_tx") o = { ...o, category: c.category, subcategory: c.subcategory || "", changed: true, parts: o.lines.length ? o.parts : [{ category: c.category, subcategory: c.subcategory || "", amount: o.amount }] };
+    else if (c.op === "recat_line") {
+      const lines = o.lines.map((l) => (l.description === c.description && l.amount === c.amount ? { ...l, category: c.category, classified: true, changed: true } : l));
+      const m = new Map();
+      lines.forEach((l) => { const [h, ...rest] = l.classified && l.category ? l.category.split(" / ") : [o.category, o.subcategory]; const k = `${h}\u0000${rest.join(" / ")}`; m.set(k, (m.get(k) || 0) + Number(l.amount)); });
+      const parts = [...m.entries()].map(([k, v]) => { const [category, subcategory] = k.split("\u0000"); return { category, subcategory, amount: v.toFixed(2) }; });
+      const diff = Number(o.amount) - parts.reduce((s, p) => s + Number(p.amount), 0);
+      if (parts.length) parts[0].amount = (Number(parts[0].amount) + diff).toFixed(2);
+      o = { ...o, lines, parts, changed: true };
+    }
+  }
+  return o;
+}
+function budgetView() {
+  const B = session.state.budget, ch = (session.state.changes || []).filter((c) => c.op === "budget_set");
+  if (!ch.length) return B;
+  let g = B.config.global != null ? Number(B.config.global) : null; const cats = { ...(B.config.categories || {}) };
+  ch.forEach((c) => { if ("global" in c) g = c.global; Object.entries(c.categories || {}).forEach(([k, v]) => (v == null ? delete cats[k] : (cats[k] = v))); });
+  const months = {};
+  Object.entries(B.months).forEach(([m, x]) => {
+    const sp = Number(x.variable.spent);
+    months[m] = { ...x, variable: { ...x.variable, budget: g != null ? g.toFixed(2) : null, left: g != null ? (g - sp).toFixed(2) : null, pct: g ? ((sp / g) * 100).toFixed(2) : null,
+      cats: x.variable.cats.map((c) => ({ ...c, budget: cats[c.category] != null ? Number(cats[c.category]).toFixed(2) : null })) } };
+  });
+  return { ...B, config: { global: g, categories: cats }, months };
+}
+function pathPicker(current, remLabel, onSave) {
+  const box = el("div", "ed"), sel = el("select"), rem = el("input"), lab = el("label");
+  sel.append(...flat(session.state.category_tree).map((p) => new Option(p, p)));
+  if (current && ![...sel.options].some((o) => o.value === current)) sel.prepend(new Option(current, current));
+  sel.value = current || sel.options[0]?.value;
+  rem.type = "checkbox"; rem.style.width = "auto"; lab.append(el("span", "", remLabel), rem);
+  const row = el("div", "row"), ok = el("button", "", "Desa el canvi"), no = el("button", "ghost", "Cancel·la");
+  ok.onclick = run(async () => onSave(sel.value, rem.checked)); no.onclick = () => box.remove();
+  row.append(ok, no); box.append(sel, lab, row); return box;
+}
+function renderChg() {
+  const box = $("chg"), ch = session?.state?.changes || [];
+  box.hidden = !ch.length || !session; if (box.hidden) return;
+  const pend = ch.filter((c) => !c.sent).length;
+  box.replaceChildren(el("div", "", `✎ ${ch.length} canvi${ch.length > 1 ? "s" : ""} ${pend ? `(${pend} per enviar)` : "enviat(s), esperant el paquet següent"}`));
+  if (pend) {
+    const row = el("div", "row"), send = el("button", "", "Envia els canvis"), drop = el("button", "ghost", "Descarta");
+    send.onclick = run(sendChanges); drop.onclick = run(async () => { session.state.changes = ch.filter((c) => c.sent); await saveState(); render(); });
+    row.append(send, drop); box.append(row);
+  }
+}
+async function sendChanges() {
+  const todo = session.state.changes.filter((c) => !c.sent); if (!todo.length) return;
+  const body = { format: "efam-changes1", base_seq: session.state.seq ?? null, changes: todo.map(({ sent, path, ...c }) => c) };
+  const file = new File([JSON.stringify(body)], "canvis.json", { type: "application/vnd.efam.changes+json" });
+  const blob = await sealUpload(file, session.keyId, session.key);
+  const f = new File([blob], `canvis-${Date.now()}.efam`, { type: "application/octet-stream" });
+  if (navigator.canShare?.({ files: [f] })) await navigator.share({ files: [f], title: "Canvis" });
+  else { const a = el("a", "", "Baixa el fitxer de canvis"); a.href = URL.createObjectURL(blob); a.download = f.name; $("chg").append(a); }
+  todo.forEach((c) => (c.sent = true)); await saveState(); msg("Canvis xifrats. Comparteix el fitxer cap al grup."); renderChg();
+}
+function editBudget(host, v, B) {
+  host.querySelector(".ed")?.remove();
+  const box = el("div", "ed"), inputs = new Map(), mk = (label, val) => { const l = el("label"), i = el("input"); i.type = "number"; i.min = "0"; i.step = "1"; i.inputMode = "decimal"; i.value = val != null && val !== "" ? Number(val) : ""; l.append(el("span", "", label), i); box.append(l); inputs.set(label, i); return i; };
+  const g = mk("Total mensual", v.budget);
+  const names = [...new Set([...v.cats.map((c) => c.category), ...Object.keys(B.config.categories || {})])];
+  names.forEach((c) => mk(c, (B.config.categories || {})[c] ?? v.cats.find((x) => x.category === c)?.budget));
+  const row = el("div", "row"), ok = el("button", "", "Desa el pressupost"), no = el("button", "ghost", "Cancel·la");
+  ok.onclick = run(async () => {
+    const patch = { op: "budget_set" }, cur = (B.config.categories || {});
+    const gv = g.value === "" ? null : Number(g.value); if (gv !== (B.config.global != null ? Number(B.config.global) : null)) patch.global = gv;
+    const cats = {}; names.forEach((c) => { const x = inputs.get(c).value === "" ? null : Number(inputs.get(c).value); if (x !== (cur[c] != null ? Number(cur[c]) : null)) cats[c] = x; });
+    if (Object.keys(cats).length) patch.categories = cats;
+    if (patch.global === undefined && !patch.categories) return box.remove();
+    await addChange(patch); renderHome();
+  });
+  no.onclick = () => box.remove(); row.append(ok, no); box.append(row); host.append(box);
+}
+
 // ---------- vistes ----------
 const views = ["setup", "locked", "home", "summary", "group", "list", "detail", "upload"];
 let tab = "home", stack = [];
-const show = (v) => { views.forEach((x) => $(x).hidden = x !== v); $("nav").hidden = !session; $("nav").querySelectorAll("button").forEach((b) => { b.classList.toggle("on", b.dataset.tab === tab); if (b.dataset.tab === "home") b.hidden = !session?.state?.budget; }); };
+const show = (v) => { views.forEach((x) => $(x).hidden = x !== v); renderChg(); $("foot").hidden = !session; $("nav").hidden = !session; $("nav").querySelectorAll("button").forEach((b) => { b.classList.toggle("on", b.dataset.tab === tab); if (b.dataset.tab === "home") b.hidden = !session?.state?.budget; }); };
 function msg(t, err) { const m = $("msg"); m.textContent = t || ""; m.className = err ? "err" : "ok"; }
 // Paquets antics (sense `parts`/`pending`): es tracten com una sola partida a la seva categoria.
 const norm = (r) => (r.parts ? r : { ...r, pending: !!r.pending, parts: [{ category: r.category, subcategory: r.subcategory, amount: r.amount }] });
-const allItems = () => Object.values(session.state?.items || {}).map(norm);
+const allItems = () => { const ch = session.state?.changes || []; return Object.values(session.state?.items || {}).map((r) => withChanges(norm(r), ch)); };
 const catName = (c) => c || "Sense classificar";
 const pathName = (r) => [catName(r.category), r.subcategory].filter(Boolean).join(" › ");
 
@@ -95,7 +182,7 @@ function trackBar(parts, scale, budget) {
 }
 function renderHome() {
   show("home");
-  const B = session.state.budget, months = Object.keys(B.months).sort();
+  const B = budgetView(), months = Object.keys(B.months).sort();
   if (!months.includes(homeMonth)) homeMonth = months[months.length - 1] || "";
   const sel = $("hmonth"); sel.replaceChildren(...[...months].reverse().map((m) => new Option(monthLabel(m), m))); sel.value = homeMonth;
   const body = $("hbody"); body.replaceChildren();
@@ -115,6 +202,7 @@ function renderHome() {
   const leg = el("div", "leg");
   [["Al compte", v.loaded], ["Targeta pendent", v.card], ["Tiquets pendents", v.tickets]].forEach(([n, x], i) => { const s = el("span"); const d = el("i"); d.style.background = COL[i]; s.append(d, `${n} ${eur(x)}`); leg.append(s); });
   c1.append(leg);
+  const eb = el("button", "ghost mini", "Edita el pressupost"); eb.onclick = () => editBudget(c1, v, B); c1.append(eb);
   if (!m.complete) c1.append(el("p", "muted", "Mes encara no complet: les dades no arriben a final de mes."));
   body.append(c1);
   // 2. Despeses fixes
@@ -260,12 +348,19 @@ function renderDetail(r) {
     r.lines.forEach((l) => {
       const row = el("div", "line"); const left = el("span", "");
       left.append(el("span", "", `${l.quantity && l.quantity !== "1" ? l.quantity + " × " : ""}${l.description}`), el("span", l.classified ? "tag" : "tag no", l.classified ? l.category : "no classificat"));
-      row.append(left, el("span", "a", eur(l.amount))); d.append(row);
+      const eb = el("button", "ghost mini", "✎"); eb.setAttribute("aria-label", "Canvia la categoria"); if (l.changed) left.append(el("span", "tag ch", "canvi pendent"));
+      eb.onclick = () => { row.parentElement.querySelector(".ed")?.remove(); row.after(pathPicker(l.category, "Recorda-ho per a aquest producte", async (path, remember) => { await addChange({ op: "recat_line", tx_id: r.id, description: l.description, amount: l.amount, category: path, remember }); renderDetail(withChanges(norm(session.state.items[r.id]), session.state.changes)); })); };
+      row.append(left, el("span", "a", eur(l.amount)), eb); d.append(row);
     });
     r.discounts.forEach((x) => { const row = el("div", "line"); row.append(el("span", "", `Descompte ${x.type}${x.description ? " · " + x.description : ""}`), el("span", "a", eur(x.amount))); d.append(row); });
   } else {
-    kv("Categoria", pathName(r));
+    kv("Categoria", pathName(r) + (r.changed ? " (canvi pendent)" : ""));
     d.append(el("p", "muted", "Sense tiquet: la categoria és la del comerç."));
+    if (!r.id.startsWith("resid-")) {
+      const eb = el("button", "ghost", "Canvia la categoria");
+      eb.onclick = () => { d.querySelector(".ed")?.remove(); d.append(pathPicker([r.category, r.subcategory].filter(Boolean).join(" / "), "Recorda-ho per a aquest comerç", async (path, remember) => { const [category, ...rest] = path.split(" / "); await addChange({ op: "recat_tx", tx_id: r.id, category, subcategory: rest.join(" / "), remember }); renderDetail(withChanges(norm(session.state.items[r.id]), session.state.changes)); })); };
+      d.append(eb);
+    }
   }
 }
 
@@ -274,7 +369,9 @@ async function importPackage(bytes) {
   const env = parseEnvelope(bytes);
   if (!env) throw new Error("No és un paquet de l'app");
   const { plain } = await openEnvelope(env, "bundle", session.keyId, session.key);
+  const keep = (session.state?.changes || []).filter((c) => !c.sent);          // els enviats ja són al paquet nou; els no enviats es conserven
   session.state = applyBundle(session.state, decodeBody(plain));
+  session.state.changes = keep;
   await saveState();
   msg(`Paquet ${session.state.seq} carregat: ${Object.keys(session.state.items).length} despeses.`);
   openTab(tab);

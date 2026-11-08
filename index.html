@@ -49,6 +49,8 @@
   .fx { display:flex; justify-content:space-between; font-size:14px; padding:4px 0; color:var(--mut); } .fx.done { color:var(--fg); }
   .hist { display:flex; align-items:flex-end; gap:8px; height:130px; margin-top:6px; } .hist .col { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; cursor:pointer; font-size:11px; color:var(--mut); }
   .hist .b { width:100%; border-radius:6px 6px 0 0; background:var(--c1); position:relative; } .hist .col.sel .b { outline:2px solid var(--fg); } .hist .bm { position:absolute; left:-2px; right:-2px; height:2px; background:var(--fg); }
+  .ed { border:1px solid var(--line); border-radius:12px; padding:10px; margin:10px 0; } .ed label { display:flex; justify-content:space-between; align-items:center; gap:8px; margin:6px 0; font-size:14px; } .ed label input { width:110px; margin:0; text-align:right; } .ed .row { margin:8px 0 0; }
+  .mini { padding:4px 10px; font-size:13px; border-radius:8px; margin-left:8px; } .tag.ch { color:var(--c2); }
   .gr { display:flex; justify-content:space-between; gap:8px; font-size:14px; padding:6px 0; border-bottom:1px solid var(--line); } .gr:last-child { border:0; }
 </style>
 </head>
@@ -57,6 +59,7 @@
   <h1>Visor</h1>
   <nav id="nav" hidden><button data-tab="home">Inici</button><button data-tab="summary">Resum</button><button data-tab="list">Detall</button><button data-tab="upload">Envia</button></nav>
   <div id="msg" role="status"></div>
+  <div id="chg" class="card" hidden></div>
 
   <section id="setup" hidden>
     <p>Configura la teva clau. L'escaneges una sola vegada i es guarda protegida amb la biometria del mòbil.</p>
@@ -94,7 +97,6 @@
     <div id="total"></div>
     <ul id="rows"></ul>
     <div class="row">
-      <label class="btn ghost">Obre un paquet<input id="filepkg" type="file" accept=".efam,application/octet-stream" hidden></label>
       <button id="toupload" class="ghost">Envia un fitxer</button><button id="lock" class="ghost">Bloqueja</button>
     </div>
     <p id="seqinfo" class="muted"></p>
@@ -112,6 +114,9 @@
     </div>
     <div id="uploadres"></div>
   </section>
+  <div id="foot" class="row" hidden>
+    <label class="btn ghost">📂 Obre un paquet<input id="filepkg" type="file" hidden></label>
+  </div>
   <p id="ver" class="muted ver"></p>
 </main>
 <script type="module" src="app.js"></script>
