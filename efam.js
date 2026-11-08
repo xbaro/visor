@@ -1,5 +1,5 @@
 // Lògica pura de l'app: sobres AES-256-GCM (format efam1). Sense DOM: es pot provar amb Node.
-export const VERSION = "1.1.1";
+export const VERSION = "1.2.0";
 const enc = new TextEncoder(), dec = new TextDecoder();
 export const b64 = (buf) => { let s = ""; new Uint8Array(buf).forEach((c) => (s += String.fromCharCode(c))); return btoa(s); };
 export const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -41,11 +41,11 @@ export async function sealUpload(file, keyId, key) {
 
 /** Aplica un paquet de dades a l'estat local {seq, items:{id: despesa}}. `full` (reset) substitueix; `delta` exigeix base_seq coincident. */
 export function applyBundle(state, body) {
-  if (body.kind === "full" || body.reset) return { seq: body.seq, items: Object.fromEntries(body.upsert.map((r) => [r.id, r])) };
+  if (body.kind === "full" || body.reset) return { seq: body.seq, items: Object.fromEntries(body.upsert.map((r) => [r.id, r])), budget: body.budget ?? null };
   if (!state || body.base_seq !== state.seq) throw new Error("Falta un paquet anterior: cal un paquet complet");
   const items = { ...state.items };
   body.upsert.forEach((r) => (items[r.id] = r));
   body.delete.forEach((id) => delete items[id]);
-  return { seq: body.seq, items };
+  return { seq: body.seq, items, budget: body.budget !== undefined ? body.budget : (state.budget ?? null) };
 }
 export const decodeBody = (plain) => JSON.parse(dec.decode(plain));

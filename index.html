@@ -38,12 +38,24 @@
   .sub { display:flex; justify-content:space-between; margin-top:18px; padding:6px 0; font-weight:600; border-bottom:2px solid var(--line); }
   .tag { display:inline-block; margin-left:6px; padding:1px 7px; border-radius:99px; background:var(--card); color:var(--mut); font-size:12px; } .tag.no { color:var(--err); }
   .ver { text-align:center; font-size:12px; margin-top:28px; }
+  :root { --c1:#2f6f73; --c2:#d9a441; --c3:#81b29a; --bad:#b42318; }
+  @media (prefers-color-scheme: dark) { :root { --c1:#5fb3b8; --c2:#e6b85c; --c3:#8fd0b0; --bad:#ff8a80; } }
+  .card { background:var(--card); border-radius:14px; padding:14px; margin:12px 0; }
+  .card h3 { margin:0 0 8px; } .ring { display:flex; align-items:center; gap:16px; } .ring svg { flex:0 0 auto; }
+  .ring .t { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; } .over { color:var(--bad); } .good { color:var(--ok); }
+  .leg { display:flex; flex-wrap:wrap; gap:4px 12px; font-size:13px; color:var(--mut); margin-top:8px; } .leg i { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; }
+  .trk { position:relative; height:10px; border-radius:5px; background:var(--line); display:flex; overflow:visible; } .trk span { height:100%; } .trk span:first-child { border-radius:5px 0 0 5px; } .trk .mk { position:absolute; top:-3px; width:2px; height:16px; background:var(--fg); }
+  .cr { margin:10px 0; } .cr .h { display:flex; justify-content:space-between; gap:8px; font-size:14px; margin-bottom:4px; cursor:pointer; } .cr .h b { font-weight:600; }
+  .fx { display:flex; justify-content:space-between; font-size:14px; padding:4px 0; color:var(--mut); } .fx.done { color:var(--fg); }
+  .hist { display:flex; align-items:flex-end; gap:8px; height:130px; margin-top:6px; } .hist .col { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; cursor:pointer; font-size:11px; color:var(--mut); }
+  .hist .b { width:100%; border-radius:6px 6px 0 0; background:var(--c1); position:relative; } .hist .col.sel .b { outline:2px solid var(--fg); } .hist .bm { position:absolute; left:-2px; right:-2px; height:2px; background:var(--fg); }
+  .gr { display:flex; justify-content:space-between; gap:8px; font-size:14px; padding:6px 0; border-bottom:1px solid var(--line); } .gr:last-child { border:0; }
 </style>
 </head>
 <body>
 <main>
   <h1>Visor</h1>
-  <nav id="nav" hidden><button data-tab="summary">Resum</button><button data-tab="list">Detall</button><button data-tab="upload">Envia</button></nav>
+  <nav id="nav" hidden><button data-tab="home">Inici</button><button data-tab="summary">Resum</button><button data-tab="list">Detall</button><button data-tab="upload">Envia</button></nav>
   <div id="msg" role="status"></div>
 
   <section id="setup" hidden>
@@ -56,6 +68,11 @@
   <section id="locked" hidden>
     <p>Bloquejat. Cal la biometria per accedir a la clau.</p>
     <div class="row"><button id="unlock">Desbloqueja</button><button id="forget" class="ghost">Oblida aquest dispositiu</button></div>
+  </section>
+
+  <section id="home" hidden>
+    <select id="hmonth" aria-label="Mes"></select>
+    <div id="hbody"></div>
   </section>
 
   <section id="summary" hidden>

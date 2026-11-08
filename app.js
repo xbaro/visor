@@ -60,9 +60,9 @@ document.addEventListener("visibilitychange", () => { if (document.hidden) lock(
 document.addEventListener("pointerdown", () => session && arm());
 
 // ---------- vistes ----------
-const views = ["setup", "locked", "summary", "group", "list", "detail", "upload"];
-let tab = "summary", stack = [];
-const show = (v) => { views.forEach((x) => $(x).hidden = x !== v); $("nav").hidden = !session; $("nav").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab)); };
+const views = ["setup", "locked", "home", "summary", "group", "list", "detail", "upload"];
+let tab = "home", stack = [];
+const show = (v) => { views.forEach((x) => $(x).hidden = x !== v); $("nav").hidden = !session; $("nav").querySelectorAll("button").forEach((b) => { b.classList.toggle("on", b.dataset.tab === tab); if (b.dataset.tab === "home") b.hidden = !session?.state?.budget; }); };
 function msg(t, err) { const m = $("msg"); m.textContent = t || ""; m.className = err ? "err" : "ok"; }
 // Paquets antics (sense `parts`/`pending`): es tracten com una sola partida a la seva categoria.
 const norm = (r) => (r.parts ? r : { ...r, pending: !!r.pending, parts: [{ category: r.category, subcategory: r.subcategory, amount: r.amount }] });
@@ -78,7 +78,86 @@ async function render() {
   stack = [];
   openTab(tab);
 }
-function openTab(t) { tab = t; stack = []; if (t === "summary") renderSummary(); else if (t === "list") renderList(); else show("upload"); }
+function openTab(t) { if (t === "home" && !session.state?.budget) t = "summary"; tab = t; stack = []; if (t === "home") renderHome(); else if (t === "summary") renderSummary(); else if (t === "list") renderList(); else show("upload"); }
+
+
+// ---------- Inici visual: pressupost, despeses fixes, categories, creixement i resultat dels mesos ----------
+const NS = "http://www.w3.org/2000/svg";
+const svg = (t, a = {}, ...k) => { const e = document.createElementNS(NS, t); Object.entries(a).forEach(([x, y]) => e.setAttribute(x, y)); e.append(...k); return e; };
+const N = (s) => Number(s);
+const COL = ["var(--c1)", "var(--c2)", "var(--c3)"];
+let homeMonth = "";
+function trackBar(parts, scale, budget) {
+  const t = el("div", "trk");
+  parts.forEach((v, i) => { const s = el("span"); s.style.width = `${Math.max(0, (v / scale) * 100)}%`; s.style.background = COL[i]; t.append(s); });
+  if (budget != null) { const m = el("div", "mk"); m.style.left = `${Math.min(100, (budget / scale) * 100)}%`; t.append(m); }
+  return t;
+}
+function renderHome() {
+  show("home");
+  const B = session.state.budget, months = Object.keys(B.months).sort();
+  if (!months.includes(homeMonth)) homeMonth = months[months.length - 1] || "";
+  const sel = $("hmonth"); sel.replaceChildren(...[...months].reverse().map((m) => new Option(monthLabel(m), m))); sel.value = homeMonth;
+  const body = $("hbody"); body.replaceChildren();
+  const m = B.months[homeMonth]; if (!m) return body.append(el("p", "muted", "Sense dades."));
+  const v = m.variable, f = m.fixed, spent = N(v.spent), bud = v.budget != null ? N(v.budget) : null;
+  // 1. Despesa variable: anell (carregat / targeta pendent de liquidar / tiquets que esperen moviment)
+  const c1 = el("div", "card"); c1.append(el("h3", "", "Despesa variable"));
+  const r = el("div", "ring"), den = Math.max(bud ?? spent, spent, 1), C = 2 * Math.PI * 52;
+  const ring = svg("svg", { width: 130, height: 130, viewBox: "0 0 130 130", role: "img", "aria-label": "Despesa variable" }, svg("circle", { cx: 65, cy: 65, r: 52, fill: "none", stroke: "var(--line)", "stroke-width": 16 }));
+  let off = 0;
+  [N(v.loaded), N(v.card), N(v.tickets)].forEach((x, i) => { const len = Math.max(0, (x / den) * C); if (len > 0) ring.append(svg("circle", { cx: 65, cy: 65, r: 52, fill: "none", stroke: COL[i], "stroke-width": 16, "stroke-dasharray": `${len} ${C - len}`, "stroke-dashoffset": -off, transform: "rotate(-90 65 65)" })); off += len; });
+  const tx = el("div"); const over = bud != null && spent > bud;
+  tx.append(el("div", "t" + (over ? " over" : ""), bud != null ? `${v.pct ? Math.round(N(v.pct)) : 0} %` : eur(spent)));
+  tx.append(el("div", "muted", bud != null ? `${eur(spent)} de ${eur(bud)}` : "Sense pressupost global"));
+  if (bud != null) tx.append(el("div", over ? "over" : "good", over ? `Passat per ${eur(spent - bud)}` : `Queden ${eur(bud - spent)}`));
+  r.append(ring, tx); c1.append(r);
+  const leg = el("div", "leg");
+  [["Al compte", v.loaded], ["Targeta pendent", v.card], ["Tiquets pendents", v.tickets]].forEach(([n, x], i) => { const s = el("span"); const d = el("i"); d.style.background = COL[i]; s.append(d, `${n} ${eur(x)}`); leg.append(s); });
+  c1.append(leg);
+  if (!m.complete) c1.append(el("p", "muted", "Mes encara no complet: les dades no arriben a final de mes."));
+  body.append(c1);
+  // 2. Despeses fixes
+  if (f.items.length) {
+    const c2 = el("div", "card"); c2.append(el("h3", "", "Despeses fixes"));
+    c2.append(el("div", "t", `${f.pct != null ? Math.round(N(f.pct)) : 0} % carregat`), el("div", "muted", `${eur(f.loaded)} de ${eur(f.expected)}`));
+    const t = trackBar([N(f.loaded)], Math.max(N(f.expected), 1)); t.style.margin = "8px 0"; c2.append(t);
+    f.items.forEach((i) => { const row = el("div", "fx" + (i.done ? " done" : "")); row.append(el("span", "", `${i.done ? "✓" : "⏳"} ${i.sub || i.category}`), el("span", "a", i.done ? eur(i.loaded) : `~${eur(i.expected)}`)); c2.append(row); });
+    body.append(c2);
+  }
+  // 3. Categories variables
+  const rows = v.cats.filter((c) => N(c.spent) > 0 || c.budget != null).slice(0, 10);
+  if (rows.length) {
+    const c3 = el("div", "card"); c3.append(el("h3", "", "Per categoria"));
+    const scale = Math.max(...rows.map((c) => Math.max(N(c.spent), c.budget != null ? N(c.budget) : 0)), 1);
+    rows.forEach((c) => {
+      const b = c.budget != null ? N(c.budget) : null, ov = b != null && N(c.spent) > b, w = el("div", "cr");
+      const h = el("div", "h"); h.append(el("b", "", catName(c.category)), el("span", ov ? "over" : "", b != null ? `${eur(c.spent)} / ${eur(b)}` : eur(c.spent)));
+      h.onclick = () => { sumMonth = homeMonth; stack.push(renderHome); renderGroup(c.category); };
+      w.append(h, trackBar([N(c.loaded), N(c.card), N(c.tickets)], scale, b)); c3.append(w);
+    });
+    body.append(c3);
+  }
+  // 4. Creixement de les partides respecte dels mesos anteriors
+  if (m.growth.length) {
+    const c4 = el("div", "card"); c4.append(el("h3", "", "Evolució de les partides"), el("div", "muted", "Respecte la mitjana dels 3 mesos anteriors"));
+    m.growth.forEach((g) => { const up = N(g.delta) > 0, row = el("div", "gr"); row.append(el("span", "", `${g.sub || g.category}`), el("span", up ? "over" : "good", `${up ? "▲ +" : "▼ "}${Math.round(N(g.pct))} %  ·  ${eur(g.value)}`)); c4.append(row); });
+    body.append(c4);
+  }
+  // 5. Resultat de cada mes respecte el pressupost
+  const c5 = el("div", "card"); c5.append(el("h3", "", "Mesos: final respecte el pressupost"));
+  const hist = el("div", "hist"), hmax = Math.max(...months.map((k) => Math.max(N(B.months[k].variable.spent), bud ?? 0)), 1);
+  months.forEach((k) => {
+    const x = B.months[k].variable, sp = N(x.spent), col = el("div", "col" + (k === homeMonth ? " sel" : "")), b = el("div", "b");
+    b.style.height = `${(sp / hmax) * 90}px`; if (bud != null) { const mk = el("div", "bm"); mk.style.bottom = `${(bud / hmax) * 90 - (sp / hmax) * 90}px`; mk.style.position = "absolute"; b.append(mk); b.style.overflow = "visible"; }
+    const d = bud != null ? sp - bud : null;
+    col.append(el("span", d != null && d > 0 ? "over" : "good", d == null ? "" : `${d > 0 ? "+" : ""}${Math.round(d)}`), b, el("span", "", MON3[Number(k.slice(5)) - 1]));
+    col.onclick = () => { homeMonth = k; renderHome(); }; hist.append(col);
+  });
+  c5.append(hist); if (bud != null) c5.append(el("p", "muted", "Línia = pressupost. Sobre cada mes: quant s'ha passat (+) o t'ha sobrat (−) del pressupost."));
+  body.append(c5);
+}
+$("hmonth").onchange = (e) => { homeMonth = e.target.value; renderHome(); };
 
 // Resum: tria un mes i veu els totals per grup (categoria); coherent amb l'informe PDF (les compres de targeta sense liquidar no compten).
 let sumMonth = "";
@@ -108,6 +187,7 @@ function renderSummary() {
   });
   if (!groups.size) ul.append(el("li", "muted", "Sense despeses aquest mes."));
 }
+const MON3 = ['gen','feb','mar','abr','mai','jun','jul','ago','set','oct','nov','des'];
 const monthLabel = (m) => new Date(`${m}-01T00:00:00`).toLocaleDateString("ca-ES", { month: "long", year: "numeric" });
 
 // Grup: subgrups amb subtotal i les partides; cada compra amb tiquet obre la compra sencera classificada.
@@ -228,7 +308,7 @@ $("lock").onclick = lock;
 $("filepkg").onchange = run(async (e) => { const f = e.target.files[0]; if (f) await importPackage(new Uint8Array(await f.arrayBuffer())); e.target.value = ""; });
 ["q", "month", "cat"].forEach((id) => $(id).addEventListener("input", () => session && renderList()));
 const back = () => (stack.length ? stack.pop()() : openTab(tab));
-$("back").onclick = back; $("gback").onclick = back; $("upback").onclick = () => openTab("summary");
+$("back").onclick = back; $("gback").onclick = back; $("upback").onclick = () => openTab("home");
 $("smonth").onchange = (e) => { sumMonth = e.target.value; renderSummary(); };
 $("nav").querySelectorAll("button").forEach((b) => (b.onclick = () => session && openTab(b.dataset.tab)));
 $("toupload").onclick = () => openTab("upload");
